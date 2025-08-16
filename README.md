@@ -16,3 +16,4 @@ Clona este repositorio:
 ```bash
 git clone https://github.com/FrnndCndr/IngestLocal
 cd IngestLocal
+python ingestlocal.py
