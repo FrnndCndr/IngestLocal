@@ -34,6 +34,22 @@ class App:
         self.tree.pack(fill='both', expand=True)
         self.tree.bind("<Button-1>", self.toggle_checkbox)
 
+        # --- NUEVOS BOTONES: Seleccionar/Deseleccionar todo ---
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(pady=6)
+        ttk.Button(
+            btn_frame,
+            text="Seleccionar todo",
+            command=lambda: self.seleccionar_deseleccionar_todo(True)
+        ).pack(side='left', padx=5)
+
+        ttk.Button(
+            btn_frame,
+            text="Deseleccionar todo",
+            command=lambda: self.seleccionar_deseleccionar_todo(False)
+        ).pack(side='left', padx=5)
+        # ------------------------------------------------------
+
         ttk.Button(frame, text="Exportar Selección", command=self.exportar).pack(pady=10)
 
     def seleccionar_carpeta(self):
@@ -67,6 +83,7 @@ class App:
             pass
 
     def toggle_checkbox(self, event):
+        # Evitar cambiar estado si no se clickea sobre una fila
         item = self.tree.identify_row(event.y)
         if not item:
             return
@@ -80,7 +97,7 @@ class App:
 
     def actualizar_checkbox(self, item, estado):
         texto = self.tree.item(item, 'text')
-        nombre = texto[4:]
+        nombre = texto[4:]  # quitar el "[ ] " o "[✔] "
         nuevo_texto = f"[✔] {nombre}" if estado else f"[ ] {nombre}"
         self.tree.item(item, text=nuevo_texto)
         self.checks[item] = estado
@@ -99,10 +116,19 @@ class App:
         if all(estados):
             self.actualizar_checkbox(padre, True)
         elif any(estados):
+            # Si quieres estado "indeterminado", podrías cambiar el texto aquí;
+            # por simplicidad, lo dejamos marcado cuando hay mezcla.
             self.actualizar_checkbox(padre, True)
         else:
             self.actualizar_checkbox(padre, False)
         self.actualizar_padres(padre)
+
+    def seleccionar_deseleccionar_todo(self, estado: bool):
+        """Marca o desmarca todos los nodos del árbol."""
+        for item in self.tree.get_children():
+            self.actualizar_checkbox(item, estado)
+            self.propagar_a_hijos(item, estado)
+        # No es necesario actualizar padres porque todos quedan uniformes.
 
     def obtener_seleccionados(self):
         seleccionados = []
