@@ -1,6 +1,6 @@
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 # Filtros
 EXCLUIR_CARPETAS = {
@@ -169,13 +169,40 @@ class App:
             pass
         return salida
 
+    def _asegurar_txt(self, nombre: str) -> str:
+        """Devuelve el nombre con extensión .txt si no la tiene."""
+        nombre = nombre.strip()
+        if not nombre:
+            nombre = "git_ingest_output.txt"
+        if not os.path.splitext(nombre)[1]:
+            nombre += ".txt"
+        return nombre
+
     def exportar(self):
         paths = self.obtener_seleccionados()
         if not paths:
             messagebox.showinfo("Sin selección", "No seleccionaste archivos o carpetas.")
             return
 
-        salida = os.path.join(os.getcwd(), "git_ingest_output.txt")
+        # Preguntar nombre del archivo
+        nombre = simpledialog.askstring(
+            "Nombre del archivo",
+            "Ingresa el nombre del archivo a guardar (sin ruta):",
+            initialvalue="git_ingest_output.txt",
+            parent=self.root
+        )
+        if nombre is None:
+            # Usuario canceló
+            return
+
+        nombre = self._asegurar_txt(nombre)
+
+        # Crear carpeta contexts en el directorio de trabajo actual
+        carpeta_contexts = os.path.join(os.getcwd(), "contexts")
+        os.makedirs(carpeta_contexts, exist_ok=True)
+
+        salida = os.path.join(carpeta_contexts, nombre)
+
         with open(salida, 'w', encoding='utf-8') as f:
             f.write("### Directory Structure:\n\n")
             f.write(self.generar_estructura(self.ruta_base))
