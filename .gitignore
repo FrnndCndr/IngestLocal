@@ -1,5 +1,26 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated files
 git_ingest_output.txt
+
+# Local project folders
 /contexts
-__pycache__
-.venv
-requirements.txt
+
+# Environment variables (secrets, API keys, etc.)
+.env
+
+# IDE/editor settings
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
