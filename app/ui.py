@@ -12,7 +12,6 @@ from app.git_info import get_git_info
 from app.highlighter import highlight_block, configure_tags
 from config import DEFAULT_EXPORT_NAME, EXTENSION_LANG
 
-# ── Theme ──────────────────────────────────────────────────────────────────────
 ctk.set_appearance_mode('dark')
 ctk.set_default_color_theme('blue')
 
@@ -69,7 +68,7 @@ class App:
         hdr = ctk.CTkFrame(side, fg_color='transparent')
         hdr.pack(fill='x', padx=10, pady=(12, 4))
         ctk.CTkButton(
-            hdr, text='  📂  Select Folder',
+            hdr, text='Select Folder',
             fg_color=CARD, hover_color=BORDER, text_color=TEXT,
             corner_radius=8, height=32, font=ctk.CTkFont(size=13),
             command=self._on_select_folder,
@@ -128,52 +127,35 @@ class App:
         main.rowconfigure(1, weight=0)
         main.columnconfigure(0, weight=1)
 
-        # Vertical PanedWindow — top row vs files content, fully responsive
-        vpane = tk.PanedWindow(
-            main, orient='vertical',
-            bg=BORDER, sashwidth=4, sashrelief='flat',
-            handlesize=0, bd=0,
-        )
+        vpane = tk.PanedWindow(main, orient='vertical',
+                               bg=BORDER, sashwidth=4, sashrelief='flat',
+                               handlesize=0, bd=0)
         vpane.grid(row=0, column=0, sticky='nsew')
 
-        # Top: Summary (left) + Directory Structure (right)
         top = ctk.CTkFrame(vpane, fg_color=BG)
         top.rowconfigure(0, weight=1)
         top.columnconfigure(0, weight=1)
         top.columnconfigure(1, weight=1)
 
-        self._pane_summary = self._build_text_pane(
-            top, 'Summary', row=0, col=0, hsb=False)
-        self._pane_structure = self._build_text_pane(
-            top, 'Directory Structure', row=0, col=1, hsb=False)
+        self._pane_summary   = self._build_text_pane(top, 'Summary',             row=0, col=0)
+        self._pane_structure = self._build_text_pane(top, 'Directory Structure',  row=0, col=1)
 
-        # Bottom: Files content
         bottom = ctk.CTkFrame(vpane, fg_color=BG)
         bottom.rowconfigure(0, weight=1)
         bottom.columnconfigure(0, weight=1)
-
-        self._pane_content = self._build_text_pane(
-            bottom, 'Files Content', row=0, col=0, hsb=True)
+        self._pane_content = self._build_text_pane(bottom, 'Files Content', row=0, col=0, hsb=True)
 
         vpane.add(top,    minsize=120)
         vpane.add(bottom, minsize=80)
-
-        # Place sash at ~28% once the window has rendered
         main.after(150, lambda: vpane.sash_place(0, 0, int(vpane.winfo_height() * 0.28)))
 
-        # Footer
         self._build_footer(main, row=1)
-
         return main
 
     # ── Pane builder ───────────────────────────────────────────────────────────
 
-    def _build_text_pane(
-        self, parent, title: str,
-        row: int, col: int,
-        colspan: int = 1,
-        hsb: bool = False,
-    ) -> tk.Text:
+    def _build_text_pane(self, parent, title: str, row: int, col: int,
+                         colspan: int = 1, hsb: bool = False) -> tk.Text:
         wrapper = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=8,
                                border_width=1, border_color=BORDER)
         wrapper.grid(row=row, column=col, columnspan=colspan,
@@ -181,36 +163,22 @@ class App:
         wrapper.rowconfigure(1, weight=1)
         wrapper.columnconfigure(0, weight=1)
 
-        # Header: title left, Copy button right
         header = ctk.CTkFrame(wrapper, fg_color='transparent')
         header.grid(row=0, column=0, columnspan=2, sticky='ew', padx=6, pady=(6, 2))
         header.columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
-            header, text=title.upper(),
-            text_color=MUTED, font=ctk.CTkFont(size=10),
-            anchor='w',
-        ).grid(row=0, column=0, sticky='w', padx=4)
+        ctk.CTkLabel(header, text=title.upper(), text_color=MUTED,
+                     font=ctk.CTkFont(size=10), anchor='w').grid(
+            row=0, column=0, sticky='w', padx=4)
 
-        copy_btn = ctk.CTkLabel(
-            header, text='⎘  Copy',
-            text_color=MUTED, font=ctk.CTkFont(size=10),
-            cursor='hand2',
-        )
+        copy_btn = ctk.CTkLabel(header, text='Copy', text_color=MUTED,
+                                font=ctk.CTkFont(size=10), cursor='hand2')
         copy_btn.grid(row=0, column=1, sticky='e', padx=4)
 
-        txt = tk.Text(
-            wrapper,
-            bg=CARD, fg=MUTED,
-            insertbackground=BLUE,
-            selectbackground=BORDER,
-            font=('Consolas', 10),
-            relief='flat', bd=0,
-            padx=10, pady=6,
-            wrap='none',
-            state='disabled',
-            cursor='arrow',
-        )
+        txt = tk.Text(wrapper, bg=CARD, fg=MUTED,
+                      insertbackground=BLUE, selectbackground=BORDER,
+                      font=('Consolas', 10), relief='flat', bd=0,
+                      padx=10, pady=6, wrap='none', state='disabled', cursor='arrow')
         txt.grid(row=1, column=0, sticky='nsew')
 
         vsb = ctk.CTkScrollbar(wrapper, command=txt.yview,
@@ -225,19 +193,17 @@ class App:
             hbar.grid(row=2, column=0, sticky='ew')
             txt.configure(xscrollcommand=hbar.set)
 
-        # Tags
-        txt.tag_configure('key',         foreground=MUTED,     font=('Consolas', 10))
-        txt.tag_configure('value',       foreground=TEXT,       font=('Consolas', 10))
-        txt.tag_configure('blue',        foreground=BLUE,       font=('Consolas', 10, 'bold'))
-        txt.tag_configure('green',       foreground=GREEN,      font=('Consolas', 10, 'bold'))
-        txt.tag_configure('amber',       foreground=AMBER,      font=('Consolas', 10, 'bold'))
-        txt.tag_configure('filepath',    foreground=BLUE,       font=('Consolas', 10, 'bold'))
-        txt.tag_configure('fence',       foreground=BORDER,     font=('Consolas', 10))
-        txt.tag_configure('code',        foreground='#A8FF78',  font=('Consolas', 10))
+        txt.tag_configure('key',         foreground=MUTED,    font=('Consolas', 10))
+        txt.tag_configure('value',       foreground=TEXT,      font=('Consolas', 10))
+        txt.tag_configure('blue',        foreground=BLUE,      font=('Consolas', 10, 'bold'))
+        txt.tag_configure('green',       foreground=GREEN,     font=('Consolas', 10, 'bold'))
+        txt.tag_configure('amber',       foreground=AMBER,     font=('Consolas', 10, 'bold'))
+        txt.tag_configure('filepath',    foreground=BLUE,      font=('Consolas', 10, 'bold'))
+        txt.tag_configure('fence',       foreground=BORDER,    font=('Consolas', 10))
+        txt.tag_configure('code',        foreground='#A8FF78', font=('Consolas', 10))
         txt.tag_configure('truncated',   foreground=AMBER)
-        txt.tag_configure('placeholder', foreground=BORDER,     font=('Consolas', 10, 'italic'))
+        txt.tag_configure('placeholder', foreground=BORDER,    font=('Consolas', 10, 'italic'))
 
-        # Wire up copy button
         def do_copy(event=None, t=txt, btn=copy_btn):
             self._copy_pane(t, btn)
         copy_btn.bind('<Button-1>', do_copy)
@@ -246,26 +212,23 @@ class App:
 
         return txt
 
-    # ── Copy helper ────────────────────────────────────────────────────────────
+    # ── Copy ───────────────────────────────────────────────────────────────────
 
     def _copy_pane(self, txt: tk.Text, btn: ctk.CTkLabel) -> None:
-        """Copy all text from a pane to the clipboard and flash the button."""
         content = txt.get('1.0', 'end').strip()
         if not content:
             return
         self.root.clipboard_clear()
         self.root.clipboard_append(content)
-
-        # Flash "Copied!" for 1.5s then revert
-        btn.configure(text='✓  Copied!', text_color=GREEN)
-        self.root.after(1500, lambda: btn.configure(text='⎘  Copy', text_color=MUTED))
+        btn.configure(text='Copied!', text_color=GREEN)
+        self.root.after(1500, lambda: btn.configure(text='Copy', text_color=MUTED))
 
     # ── Footer ─────────────────────────────────────────────────────────────────
 
     def _build_footer(self, parent, row: int) -> None:
         footer = ctk.CTkFrame(parent, fg_color=SIDE, corner_radius=0,
                               border_width=1, border_color=BORDER, height=52)
-        footer.grid(row=row, column=0, columnspan=1, sticky='ew')
+        footer.grid(row=row, column=0, sticky='ew')
         footer.pack_propagate(False)
 
         inner = ctk.CTkFrame(footer, fg_color='transparent')
@@ -296,7 +259,7 @@ class App:
         pane.configure(state='disabled')
         pane.yview_moveto(0)
 
-    # ── Preview build (threaded) ────────────────────────────────────────────────
+    # ── Preview (threaded) ─────────────────────────────────────────────────────
 
     def _update_preview(self, paths: list[str]) -> None:
         def build():
@@ -304,25 +267,19 @@ class App:
             summary_chunks   = self._build_summary_chunks(files)
             structure_chunks = self._build_structure_chunks()
             file_blocks      = self._build_content_blocks(files)
-
             self.root.after(0, lambda: (
                 self._write_pane(self._pane_summary,   summary_chunks),
                 self._write_pane(self._pane_structure, structure_chunks),
                 self._render_content(file_blocks),
             ))
-
         threading.Thread(target=build, daemon=True).start()
 
     def _build_summary_chunks(self, files: list[str]) -> list[tuple[str, str]]:
         if not files:
             return [('No files selected\n', 'placeholder')]
-
-        tokens = sum(
-            len(open(p, encoding='utf-8', errors='ignore').read()) for p in files
-        ) // 4
-        git = get_git_info(self.base_path)
-        now = datetime.now().strftime('%Y-%m-%d %H:%M')
-
+        tokens = sum(len(open(p, encoding='utf-8', errors='ignore').read()) for p in files) // 4
+        git    = get_git_info(self.base_path)
+        now    = datetime.now().strftime('%Y-%m-%d %H:%M')
         rows: list[tuple[str, str, str]] = [
             ('Project',     os.path.basename(self.base_path), 'value'),
             ('Exported',    now,                               'value'),
@@ -330,12 +287,11 @@ class App:
             ('Est. tokens', f'~{tokens:,}',                   'amber'),
         ]
         if git.get('branch'):
-            rows.append(('Branch', git['branch'], 'blue'))
+            rows.append(('Branch',  git['branch'],      'blue'))
         if git.get('commit_hash'):
-            rows.append(('Commit', git['commit_hash'], 'blue'))
+            rows.append(('Commit',  git['commit_hash'], 'blue'))
         if git.get('commit_msg'):
-            rows.append(('Message', git['commit_msg'], 'value'))
-
+            rows.append(('Message', git['commit_msg'],  'value'))
         col = max(len(r[0]) for r in rows) + 2
         chunks: list[tuple[str, str]] = []
         for label, val, tag in rows:
@@ -351,32 +307,18 @@ class App:
         return [(text or '(empty)\n', 'value')]
 
     def _build_content_blocks(self, files: list[str]) -> list:
-        """
-        Returns a list of block descriptors for the content pane.
-        Each block is either:
-          ('placeholder', text)
-          ('header', rel_path, lang)
-          ('code', rel_path, filename, code_text)
-          ('error', rel_path)
-          ('truncated', remaining_count)
-        """
         if not files:
             return [('placeholder', 'No files selected')]
-
         blocks = []
         total_chars = 0
-
         for path in files:
             if total_chars >= PREVIEW_CHAR_LIMIT:
-                remaining = len(files) - files.index(path)
-                blocks.append(('truncated', remaining))
+                blocks.append(('truncated', len(files) - files.index(path)))
                 break
-
             rel  = os.path.relpath(path, self.base_path)
             ext  = os.path.splitext(path)[1].lower()
             lang = EXTENSION_LANG.get(ext, '')
             blocks.append(('header', rel, lang))
-
             try:
                 code = open(path, encoding='utf-8', errors='ignore').read()
                 total_chars += len(code)
@@ -385,48 +327,34 @@ class App:
                 blocks.append(('code', rel, os.path.basename(path), code))
             except Exception:
                 blocks.append(('error', rel))
-
         return blocks
 
     def _render_content(self, blocks: list) -> None:
-        """Write content pane with per-block Pygments highlighting."""
         txt = self._pane_content
         configure_tags(txt)
         txt.configure(state='normal')
         txt.delete('1.0', 'end')
-
         for block in blocks:
             kind = block[0]
-
             if kind == 'placeholder':
                 txt.insert('end', block[1] + '\n', 'placeholder')
-
             elif kind == 'header':
                 _, rel, lang = block
                 txt.insert('end', f'### `{rel}`\n', 'filepath')
                 txt.insert('end', f'```{lang}\n',   'fence')
-
             elif kind == 'code':
                 _, rel, filename, code = block
                 start = txt.index('end-1c')
                 txt.insert('end', code)
-                # Highlight the inserted block
                 highlight_block(txt, start, code, filename)
-
             elif kind == 'error':
                 txt.insert('end', '> ⚠️  Could not read file.\n', 'key')
-
             elif kind == 'truncated':
-                remaining = block[1]
                 txt.insert('end',
-                    f'\n... {remaining} more file(s) not shown '
-                    f'(preview limit {PREVIEW_CHAR_LIMIT:,} chars)\n',
-                    'truncated')
-
-            # Close fence after code or error
+                    f'\n... {block[1]} more file(s) not shown '
+                    f'(preview limit {PREVIEW_CHAR_LIMIT:,} chars)\n', 'truncated')
             if kind in ('code', 'error'):
                 txt.insert('end', '```\n\n', 'fence')
-
         txt.configure(state='disabled')
         txt.yview_moveto(0)
 
@@ -439,11 +367,7 @@ class App:
 
     def _trigger_preview(self) -> None:
         self._preview_job = None
-        paths = self.file_tree.get_selected_paths(self.base_path)
-        self._update_preview(paths)
-
-    def _load_git_stats(self) -> None:
-        pass   # git info now shown inside summary panel only
+        self._update_preview(self.file_tree.get_selected_paths(self.base_path))
 
     # ── Event handlers ─────────────────────────────────────────────────────────
 
