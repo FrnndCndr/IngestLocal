@@ -123,77 +123,55 @@ class App:
 
     def _build_main(self, parent) -> ctk.CTkFrame:
         main = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
-        main.rowconfigure(1, weight=1)
+        main.rowconfigure(0, weight=1)
+        main.rowconfigure(1, weight=0)
         main.columnconfigure(0, weight=1)
 
-        # Stats bar
-        stats_bar = ctk.CTkFrame(main, fg_color=SIDE, corner_radius=0,
-                                 border_width=1, border_color=BORDER, height=54)
-        stats_bar.grid(row=0, column=0, sticky='ew')
-        stats_bar.pack_propagate(False)
+        # Vertical PanedWindow — top row vs files content, fully responsive
+        vpane = tk.PanedWindow(
+            main, orient='vertical',
+            bg=BORDER, sashwidth=4, sashrelief='flat',
+            handlesize=0, bd=0,
+        )
+        vpane.grid(row=0, column=0, sticky='nsew')
 
-        inner = ctk.CTkFrame(stats_bar, fg_color='transparent')
-        inner.pack(fill='both', expand=True, padx=16, pady=6)
+        # Top: Summary (left) + Directory Structure (right)
+        top = ctk.CTkFrame(vpane, fg_color=BG)
+        top.rowconfigure(0, weight=1)
+        top.columnconfigure(0, weight=1)
+        top.columnconfigure(1, weight=1)
 
-        self._stat_branch = self._stat_block(inner, 'Branch',     '—',       BLUE)
-        self._stat_commit = self._stat_block(inner, 'Last commit', '—',       TEXT)
-        self._stat_files  = self._stat_block(inner, 'Selected',    '0 files', GREEN)
-        self._stat_tokens = self._stat_block(inner, 'Est. tokens', '—',       AMBER)
-        for w in (self._stat_branch, self._stat_commit, self._stat_files, self._stat_tokens):
-            w.pack(side='left', padx=(0, 24))
+        self._pane_summary = self._build_text_pane(
+            top, 'Summary', row=0, col=0, hsb=False)
+        self._pane_structure = self._build_text_pane(
+            top, 'Directory Structure', row=0, col=1, hsb=False)
 
-        # Three-panel preview
-        self._build_preview_area(main)
+        # Bottom: Files content
+        bottom = ctk.CTkFrame(vpane, fg_color=BG)
+        bottom.rowconfigure(0, weight=1)
+        bottom.columnconfigure(0, weight=1)
+
+        self._pane_content = self._build_text_pane(
+            bottom, 'Files Content', row=0, col=0, hsb=True)
+
+        vpane.add(top,    minsize=120)
+        vpane.add(bottom, minsize=80)
+
+        # Place sash at ~28% once the window has rendered
+        main.after(150, lambda: vpane.sash_place(0, 0, int(vpane.winfo_height() * 0.28)))
 
         # Footer
-        footer = ctk.CTkFrame(main, fg_color=SIDE, corner_radius=0,
-                              border_width=1, border_color=BORDER, height=52)
-        footer.grid(row=2, column=0, sticky='ew')
-        footer.pack_propagate(False)
-
-        foot_inner = ctk.CTkFrame(footer, fg_color='transparent')
-        foot_inner.pack(fill='both', expand=True, padx=12, pady=8)
-        foot_inner.columnconfigure(0, weight=1)
-
-        self._filename_entry = ctk.CTkEntry(
-            foot_inner, placeholder_text=DEFAULT_EXPORT_NAME,
-            fg_color=CARD, border_color=BORDER, text_color=TEXT,
-            corner_radius=8, height=34, font=ctk.CTkFont(size=13),
-        )
-        self._filename_entry.grid(row=0, column=0, sticky='ew', padx=(0, 10))
-
-        ctk.CTkButton(
-            foot_inner, text='Export', width=90,
-            fg_color=BLUE, hover_color='#0071E3', text_color='white',
-            corner_radius=8, height=34, font=ctk.CTkFont(size=13, weight='bold'),
-            command=self._on_export,
-        ).grid(row=0, column=1)
+        self._build_footer(main, row=1)
 
         return main
 
-    # ── Three-panel preview ────────────────────────────────────────────────────
-
-    def _build_preview_area(self, parent) -> None:
-        area = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
-        area.grid(row=1, column=0, sticky='nsew')
-        area.rowconfigure(1, weight=1)
-        area.columnconfigure(0, weight=1)
-        area.columnconfigure(1, weight=1)
-
-        # Top row: Summary (left) + Directory Structure (right)
-        self._pane_summary   = self._build_text_pane(area, 'Summary',             row=0, col=0)
-        self._pane_structure = self._build_text_pane(area, 'Directory Structure',  row=0, col=1)
-
-        # Bottom row: File content (spans both columns)
-        self._pane_content   = self._build_text_pane(area, 'Files Content',        row=1, col=0, colspan=2)
-
-        # Uniform top-row height (~30% of available space via fixed pixel height isn't possible
-        # without a sash, so we use a PanedWindow for the vertical split)
-        # Simpler: give top row a fixed height via rowconfigure minsize
-        area.rowconfigure(0, minsize=180, weight=0)
+    # ── Pane builder ───────────────────────────────────────────────────────────
 
     def _build_text_pane(
-        self, parent, title: str, row: int, col: int, colspan: int = 1
+        self, parent, title: str,
+        row: int, col: int,
+        colspan: int = 1,
+        hsb: bool = False,
     ) -> tk.Text:
         wrapper = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=8,
                                border_width=1, border_color=BORDER)
@@ -202,14 +180,12 @@ class App:
         wrapper.rowconfigure(1, weight=1)
         wrapper.columnconfigure(0, weight=1)
 
-        # Pane title
         ctk.CTkLabel(
             wrapper, text=title.upper(),
             text_color=MUTED, font=ctk.CTkFont(size=10),
             anchor='w',
         ).grid(row=0, column=0, columnspan=2, sticky='ew', padx=10, pady=(8, 2))
 
-        # Text widget
         txt = tk.Text(
             wrapper,
             bg=CARD, fg=MUTED,
@@ -224,34 +200,57 @@ class App:
         )
         txt.grid(row=1, column=0, sticky='nsew')
 
-        # Scrollbars
         vsb = ctk.CTkScrollbar(wrapper, command=txt.yview,
                                button_color=BORDER, button_hover_color=MUTED)
         vsb.grid(row=1, column=1, sticky='ns')
-
-        if colspan > 1 or row > 0:   # horizontal scroll only for wide/tall panes
-            hsb = ctk.CTkScrollbar(wrapper, command=txt.xview,
-                                   button_color=BORDER, button_hover_color=MUTED,
-                                   orientation='horizontal')
-            hsb.grid(row=2, column=0, sticky='ew')
-            txt.configure(xscrollcommand=hsb.set)
-
         txt.configure(yscrollcommand=vsb.set)
 
+        if hsb:
+            hbar = ctk.CTkScrollbar(wrapper, command=txt.xview,
+                                    button_color=BORDER, button_hover_color=MUTED,
+                                    orientation='horizontal')
+            hbar.grid(row=2, column=0, sticky='ew')
+            txt.configure(xscrollcommand=hbar.set)
+
         # Tags
-        txt.tag_configure('key',      foreground=MUTED,  font=('Consolas', 10))
-        txt.tag_configure('value',    foreground=TEXT,    font=('Consolas', 10))
-        txt.tag_configure('blue',     foreground=BLUE,    font=('Consolas', 10, 'bold'))
-        txt.tag_configure('green',    foreground=GREEN,   font=('Consolas', 10, 'bold'))
-        txt.tag_configure('amber',    foreground=AMBER,   font=('Consolas', 10, 'bold'))
-        txt.tag_configure('heading',  foreground=TEXT,    font=('Consolas', 10, 'bold'))
-        txt.tag_configure('filepath', foreground=BLUE,    font=('Consolas', 10, 'bold'))
-        txt.tag_configure('fence',    foreground=BORDER,  font=('Consolas', 10))
-        txt.tag_configure('code',     foreground='#A8FF78', font=('Consolas', 10))
-        txt.tag_configure('truncated',foreground=AMBER)
-        txt.tag_configure('placeholder', foreground=BORDER, font=('Consolas', 10, 'italic'))
+        txt.tag_configure('key',         foreground=MUTED,     font=('Consolas', 10))
+        txt.tag_configure('value',       foreground=TEXT,       font=('Consolas', 10))
+        txt.tag_configure('blue',        foreground=BLUE,       font=('Consolas', 10, 'bold'))
+        txt.tag_configure('green',       foreground=GREEN,      font=('Consolas', 10, 'bold'))
+        txt.tag_configure('amber',       foreground=AMBER,      font=('Consolas', 10, 'bold'))
+        txt.tag_configure('filepath',    foreground=BLUE,       font=('Consolas', 10, 'bold'))
+        txt.tag_configure('fence',       foreground=BORDER,     font=('Consolas', 10))
+        txt.tag_configure('code',        foreground='#A8FF78',  font=('Consolas', 10))
+        txt.tag_configure('truncated',   foreground=AMBER)
+        txt.tag_configure('placeholder', foreground=BORDER,     font=('Consolas', 10, 'italic'))
 
         return txt
+
+    # ── Footer ─────────────────────────────────────────────────────────────────
+
+    def _build_footer(self, parent, row: int) -> None:
+        footer = ctk.CTkFrame(parent, fg_color=SIDE, corner_radius=0,
+                              border_width=1, border_color=BORDER, height=52)
+        footer.grid(row=row, column=0, columnspan=1, sticky='ew')
+        footer.pack_propagate(False)
+
+        inner = ctk.CTkFrame(footer, fg_color='transparent')
+        inner.pack(fill='both', expand=True, padx=12, pady=8)
+        inner.columnconfigure(0, weight=1)
+
+        self._filename_entry = ctk.CTkEntry(
+            inner, placeholder_text=DEFAULT_EXPORT_NAME,
+            fg_color=CARD, border_color=BORDER, text_color=TEXT,
+            corner_radius=8, height=34, font=ctk.CTkFont(size=13),
+        )
+        self._filename_entry.grid(row=0, column=0, sticky='ew', padx=(0, 10))
+
+        ctk.CTkButton(
+            inner, text='Export', width=90,
+            fg_color=BLUE, hover_color='#0071E3', text_color='white',
+            corner_radius=8, height=34, font=ctk.CTkFont(size=13, weight='bold'),
+            command=self._on_export,
+        ).grid(row=0, column=1)
 
     # ── Pane writers ───────────────────────────────────────────────────────────
 
@@ -263,15 +262,11 @@ class App:
         pane.configure(state='disabled')
         pane.yview_moveto(0)
 
-    def _placeholder(self, pane: tk.Text, text: str) -> None:
-        self._write_pane(pane, [(text, 'placeholder')])
-
     # ── Preview build (threaded) ────────────────────────────────────────────────
 
     def _update_preview(self, paths: list[str]) -> None:
         def build():
-            files = [p for p in paths if os.path.isfile(p)]
-
+            files            = [p for p in paths if os.path.isfile(p)]
             summary_chunks   = self._build_summary_chunks(files)
             structure_chunks = self._build_structure_chunks()
             content_chunks   = self._build_content_chunks(files)
@@ -288,14 +283,13 @@ class App:
         if not files:
             return [('No files selected\n', 'placeholder')]
 
-        total_chars = sum(
+        tokens = sum(
             len(open(p, encoding='utf-8', errors='ignore').read()) for p in files
-        )
-        tokens = total_chars // 4
-        git    = get_git_info(self.base_path)
-        now    = datetime.now().strftime('%Y-%m-%d %H:%M')
+        ) // 4
+        git = get_git_info(self.base_path)
+        now = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-        rows = [
+        rows: list[tuple[str, str, str]] = [
             ('Project',     os.path.basename(self.base_path), 'value'),
             ('Exported',    now,                               'value'),
             ('Files',       str(len(files)),                   'green'),
@@ -304,12 +298,12 @@ class App:
         if git.get('branch'):
             rows.append(('Branch', git['branch'], 'blue'))
         if git.get('commit_hash'):
-            msg   = git.get('commit_msg', '')
-            short = (msg[:30] + '…') if len(msg) > 30 else msg
-            rows.append(('Last commit', f"{git['commit_hash']}  {short}".strip(), 'value'))
+            rows.append(('Commit', git['commit_hash'], 'blue'))
+        if git.get('commit_msg'):
+            rows.append(('Message', git['commit_msg'], 'value'))
 
-        chunks: list[tuple[str, str]] = []
         col = max(len(r[0]) for r in rows) + 2
+        chunks: list[tuple[str, str]] = []
         for label, val, tag in rows:
             chunks.append((f'{label:<{col}}', 'key'))
             chunks.append((val + '\n', tag))
@@ -359,22 +353,9 @@ class App:
 
         return chunks
 
-    # ── Stat helpers ───────────────────────────────────────────────────────────
-
-    def _stat_block(self, parent, label: str, value: str, color: str) -> ctk.CTkFrame:
-        frame = ctk.CTkFrame(parent, fg_color='transparent')
-        ctk.CTkLabel(frame, text=label.upper(), text_color=MUTED,
-                     font=ctk.CTkFont(size=10)).pack(anchor='w')
-        val = ctk.CTkLabel(frame, text=value, text_color=color,
-                           font=ctk.CTkFont(size=13, weight='bold'))
-        val.pack(anchor='w')
-        frame._val_label = val
-        return frame
-
     # ── Selection change ───────────────────────────────────────────────────────
 
     def _on_selection_change(self) -> None:
-        self._refresh_stats()
         if self._preview_job:
             self.root.after_cancel(self._preview_job)
         self._preview_job = self.root.after(300, self._trigger_preview)
@@ -384,27 +365,8 @@ class App:
         paths = self.file_tree.get_selected_paths(self.base_path)
         self._update_preview(paths)
 
-    def _refresh_stats(self) -> None:
-        if not self.base_path:
-            return
-        paths  = self.file_tree.get_selected_paths(self.base_path)
-        files  = [p for p in paths if os.path.isfile(p)]
-        tokens = sum(
-            len(open(p, encoding='utf-8', errors='ignore').read())
-            for p in files
-        ) // 4
-        self._stat_files._val_label.configure(
-            text=f'{len(files)} file{"s" if len(files) != 1 else ""}')
-        self._stat_tokens._val_label.configure(
-            text=f'~{tokens:,}' if tokens else '—')
-
     def _load_git_stats(self) -> None:
-        git = get_git_info(self.base_path)
-        self._stat_branch._val_label.configure(text=git.get('branch', '—'))
-        msg   = git.get('commit_msg', '')
-        short = (msg[:26] + '…') if len(msg) > 26 else msg
-        self._stat_commit._val_label.configure(
-            text=f"{git.get('commit_hash', '—')}  {short}".strip())
+        pass   # git info now shown inside summary panel only
 
     # ── Event handlers ─────────────────────────────────────────────────────────
 
@@ -417,7 +379,6 @@ class App:
         display = ('~/' + os.path.relpath(path, home)) if path.startswith(home) else path
         self._path_label.configure(text=display)
         self.file_tree.load(path)
-        self._load_git_stats()
         self._on_selection_change()
 
     def _on_export(self) -> None:
