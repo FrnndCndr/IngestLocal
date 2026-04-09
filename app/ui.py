@@ -9,6 +9,7 @@ import customtkinter as ctk
 from app.tree import FileTree
 from app.exporter import Exporter
 from app.git_info import get_git_info
+from app.highlighter import highlight_block, configure_tags
 from config import DEFAULT_EXPORT_NAME, EXTENSION_LANG
 
 # ── Theme ──────────────────────────────────────────────────────────────────────
@@ -302,12 +303,12 @@ class App:
             files            = [p for p in paths if os.path.isfile(p)]
             summary_chunks   = self._build_summary_chunks(files)
             structure_chunks = self._build_structure_chunks()
-            content_chunks   = self._build_content_chunks(files)
+            file_blocks      = self._build_content_blocks(files)
 
             self.root.after(0, lambda: (
                 self._write_pane(self._pane_summary,   summary_chunks),
                 self._write_pane(self._pane_structure, structure_chunks),
-                self._write_pane(self._pane_content,   content_chunks),
+                self._render_content(file_blocks),
             ))
 
         threading.Thread(target=build, daemon=True).start()
@@ -349,42 +350,85 @@ class App:
         text = exp._walk_directory(self.base_path)
         return [(text or '(empty)\n', 'value')]
 
-    def _build_content_chunks(self, files: list[str]) -> list[tuple[str, str]]:
+    def _build_content_blocks(self, files: list[str]) -> list:
+        """
+        Returns a list of block descriptors for the content pane.
+        Each block is either:
+          ('placeholder', text)
+          ('header', rel_path, lang)
+          ('code', rel_path, filename, code_text)
+          ('error', rel_path)
+          ('truncated', remaining_count)
+        """
         if not files:
-            return [('No files selected\n', 'placeholder')]
+            return [('placeholder', 'No files selected')]
 
-        chunks: list[tuple[str, str]] = []
+        blocks = []
         total_chars = 0
 
         for path in files:
             if total_chars >= PREVIEW_CHAR_LIMIT:
                 remaining = len(files) - files.index(path)
-                chunks.append((
-                    f'\n... {remaining} more file(s) not shown '
-                    f'(preview limit {PREVIEW_CHAR_LIMIT:,} chars)\n',
-                    'truncated',
-                ))
+                blocks.append(('truncated', remaining))
                 break
 
             rel  = os.path.relpath(path, self.base_path)
             ext  = os.path.splitext(path)[1].lower()
             lang = EXTENSION_LANG.get(ext, '')
-
-            chunks.append((f'### `{rel}`\n', 'filepath'))
-            chunks.append((f'```{lang}\n',   'fence'))
+            blocks.append(('header', rel, lang))
 
             try:
-                content = open(path, encoding='utf-8', errors='ignore').read()
-                total_chars += len(content)
-                if not content.endswith('\n'):
-                    content += '\n'
-                chunks.append((content, 'code'))
+                code = open(path, encoding='utf-8', errors='ignore').read()
+                total_chars += len(code)
+                if not code.endswith('\n'):
+                    code += '\n'
+                blocks.append(('code', rel, os.path.basename(path), code))
             except Exception:
-                chunks.append(('> ⚠️  Could not read file.\n', 'key'))
+                blocks.append(('error', rel))
 
-            chunks.append(('```\n\n', 'fence'))
+        return blocks
 
-        return chunks
+    def _render_content(self, blocks: list) -> None:
+        """Write content pane with per-block Pygments highlighting."""
+        txt = self._pane_content
+        configure_tags(txt)
+        txt.configure(state='normal')
+        txt.delete('1.0', 'end')
+
+        for block in blocks:
+            kind = block[0]
+
+            if kind == 'placeholder':
+                txt.insert('end', block[1] + '\n', 'placeholder')
+
+            elif kind == 'header':
+                _, rel, lang = block
+                txt.insert('end', f'### `{rel}`\n', 'filepath')
+                txt.insert('end', f'```{lang}\n',   'fence')
+
+            elif kind == 'code':
+                _, rel, filename, code = block
+                start = txt.index('end-1c')
+                txt.insert('end', code)
+                # Highlight the inserted block
+                highlight_block(txt, start, code, filename)
+
+            elif kind == 'error':
+                txt.insert('end', '> ⚠️  Could not read file.\n', 'key')
+
+            elif kind == 'truncated':
+                remaining = block[1]
+                txt.insert('end',
+                    f'\n... {remaining} more file(s) not shown '
+                    f'(preview limit {PREVIEW_CHAR_LIMIT:,} chars)\n',
+                    'truncated')
+
+            # Close fence after code or error
+            if kind in ('code', 'error'):
+                txt.insert('end', '```\n\n', 'fence')
+
+        txt.configure(state='disabled')
+        txt.yview_moveto(0)
 
     # ── Selection change ───────────────────────────────────────────────────────
 
