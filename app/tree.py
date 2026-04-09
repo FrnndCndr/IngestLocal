@@ -61,16 +61,16 @@ class FileTree:
 
         apply_treeview_style()
 
+        # Scrollbar packed first so it claims its space before the Treeview
+        sb = ctk.CTkScrollbar(parent, button_color=BORDER, button_hover_color=MUTED)
+        sb.pack(side='right', fill='y')
+
         self._tv = ttk.Treeview(parent, show='tree', style='Dark.Treeview',
                                 selectmode='none')
-        self._tv.pack(fill='both', expand=True, padx=4, pady=4)
+        self._tv.pack(side='left', fill='both', expand=True)
         self._tv.bind('<Button-1>', self._on_click)
-
-        # Scrollbar
-        sb = ctk.CTkScrollbar(parent, command=self._tv.yview,
-                              button_color=BORDER, button_hover_color=MUTED)
-        sb.pack(side='right', fill='y')
         self._tv.configure(yscrollcommand=sb.set)
+        sb.configure(command=self._tv.yview)
 
     # ── Loading ────────────────────────────────────────────────────────────────
 

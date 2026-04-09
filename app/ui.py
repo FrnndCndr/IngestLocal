@@ -79,9 +79,9 @@ class App:
         )
         self._path_label.pack(fill='x', padx=14, pady=(0, 6))
 
-        # Tree container
+        # Tree container — must fill all remaining sidebar space
         tree_container = ctk.CTkFrame(side, fg_color='transparent')
-        tree_container.pack(fill='both', expand=True)
+        tree_container.pack(fill='both', expand=True, padx=0, pady=0)
         self.file_tree = FileTree(tree_container, on_change=self._refresh_stats)
 
         # Select / Deselect all
