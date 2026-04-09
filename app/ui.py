@@ -180,11 +180,23 @@ class App:
         wrapper.rowconfigure(1, weight=1)
         wrapper.columnconfigure(0, weight=1)
 
+        # Header: title left, Copy button right
+        header = ctk.CTkFrame(wrapper, fg_color='transparent')
+        header.grid(row=0, column=0, columnspan=2, sticky='ew', padx=6, pady=(6, 2))
+        header.columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            wrapper, text=title.upper(),
+            header, text=title.upper(),
             text_color=MUTED, font=ctk.CTkFont(size=10),
             anchor='w',
-        ).grid(row=0, column=0, columnspan=2, sticky='ew', padx=10, pady=(8, 2))
+        ).grid(row=0, column=0, sticky='w', padx=4)
+
+        copy_btn = ctk.CTkLabel(
+            header, text='⎘  Copy',
+            text_color=MUTED, font=ctk.CTkFont(size=10),
+            cursor='hand2',
+        )
+        copy_btn.grid(row=0, column=1, sticky='e', padx=4)
 
         txt = tk.Text(
             wrapper,
@@ -224,7 +236,28 @@ class App:
         txt.tag_configure('truncated',   foreground=AMBER)
         txt.tag_configure('placeholder', foreground=BORDER,     font=('Consolas', 10, 'italic'))
 
+        # Wire up copy button
+        def do_copy(event=None, t=txt, btn=copy_btn):
+            self._copy_pane(t, btn)
+        copy_btn.bind('<Button-1>', do_copy)
+        copy_btn.bind('<Enter>', lambda e, b=copy_btn: b.configure(text_color=TEXT))
+        copy_btn.bind('<Leave>', lambda e, b=copy_btn: b.configure(text_color=MUTED))
+
         return txt
+
+    # ── Copy helper ────────────────────────────────────────────────────────────
+
+    def _copy_pane(self, txt: tk.Text, btn: ctk.CTkLabel) -> None:
+        """Copy all text from a pane to the clipboard and flash the button."""
+        content = txt.get('1.0', 'end').strip()
+        if not content:
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(content)
+
+        # Flash "Copied!" for 1.5s then revert
+        btn.configure(text='✓  Copied!', text_color=GREEN)
+        self.root.after(1500, lambda: btn.configure(text='⎘  Copy', text_color=MUTED))
 
     # ── Footer ─────────────────────────────────────────────────────────────────
 
