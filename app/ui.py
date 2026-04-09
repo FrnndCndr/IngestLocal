@@ -22,12 +22,18 @@ MUTED  = '#8E8E93'
 GREEN  = '#30D158'
 AMBER  = '#FFD60A'
 
+SIDEBAR_MIN  = 160
+SIDEBAR_MAX  = 500
+SIDEBAR_DEFAULT = 220
+
 
 class App:
     def __init__(self, root: ctk.CTk):
         self.root      = root
         self.base_path = ''
         self.file_tree: FileTree | None = None
+        self._drag_x   = 0          # cursor x at drag start
+        self._drag_w   = 0          # sidebar width at drag start
         self._build_ui()
 
     # ── Layout ─────────────────────────────────────────────────────────────────
@@ -36,20 +42,24 @@ class App:
         self.root.title('IngestLocal')
         self.root.configure(fg_color=BG)
 
+        # Top-level container — plain pack, we manage widths manually
         outer = ctk.CTkFrame(self.root, fg_color='transparent')
         outer.pack(fill='both', expand=True)
-        outer.columnconfigure(1, weight=1)
-        outer.rowconfigure(0, weight=1)
 
-        self._build_sidebar(outer)
-        self._build_main(outer)
+        self._side  = self._build_sidebar(outer)
+        self._divider = self._build_divider(outer)
+        self._main  = self._build_main(outer)
+
+        # Sidebar and divider are fixed width; main expands
+        self._side.pack(side='left', fill='y')
+        self._divider.pack(side='left', fill='y')
+        self._main.pack(side='left', fill='both', expand=True)
 
     # ── Sidebar ────────────────────────────────────────────────────────────────
 
-    def _build_sidebar(self, parent) -> None:
+    def _build_sidebar(self, parent) -> ctk.CTkFrame:
         side = ctk.CTkFrame(parent, fg_color=SIDE, corner_radius=0,
-                            width=220, border_width=1, border_color=BORDER)
-        side.grid(row=0, column=0, sticky='nsew')
+                            width=SIDEBAR_DEFAULT, border_width=1, border_color=BORDER)
         side.pack_propagate(False)
 
         # Select folder button
@@ -69,7 +79,7 @@ class App:
         )
         self._path_label.pack(fill='x', padx=14, pady=(0, 6))
 
-        # Tree container — plain CTkFrame, scroll handled by Treeview internally
+        # Tree container
         tree_container = ctk.CTkFrame(side, fg_color='transparent')
         tree_container.pack(fill='both', expand=True)
         self.file_tree = FileTree(tree_container, on_change=self._refresh_stats)
@@ -88,11 +98,34 @@ class App:
                       command=lambda: self.file_tree.select_all(False),
                       **btn_kw).grid(row=0, column=1, padx=(4, 0), sticky='ew')
 
+        return side
+
+    # ── Drag divider ───────────────────────────────────────────────────────────
+
+    def _build_divider(self, parent) -> ctk.CTkFrame:
+        div = ctk.CTkFrame(parent, fg_color=BORDER, corner_radius=0, width=4)
+        div.pack_propagate(False)
+        div.configure(cursor='sb_h_double_arrow')
+        div.bind('<ButtonPress-1>',   self._on_drag_start)
+        div.bind('<B1-Motion>',       self._on_drag_move)
+        div.bind('<Enter>', lambda e: div.configure(fg_color=BLUE))
+        div.bind('<Leave>', lambda e: div.configure(fg_color=BORDER))
+        return div
+
+    def _on_drag_start(self, event) -> None:
+        self._drag_x = event.x_root
+        self._drag_w = self._side.winfo_width()
+
+    def _on_drag_move(self, event) -> None:
+        delta    = event.x_root - self._drag_x
+        new_w    = self._drag_w + delta
+        new_w    = max(SIDEBAR_MIN, min(SIDEBAR_MAX, new_w))
+        self._side.configure(width=new_w)
+
     # ── Main panel ─────────────────────────────────────────────────────────────
 
-    def _build_main(self, parent) -> None:
+    def _build_main(self, parent) -> ctk.CTkFrame:
         main = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
-        main.grid(row=0, column=1, sticky='nsew')
         main.rowconfigure(1, weight=1)
         main.columnconfigure(0, weight=1)
 
@@ -143,6 +176,8 @@ class App:
             command=self._on_export,
         ).grid(row=0, column=1)
 
+        return main
+
     def _stat_block(self, parent, label: str, value: str, color: str) -> ctk.CTkFrame:
         frame = ctk.CTkFrame(parent, fg_color='transparent')
         ctk.CTkLabel(frame, text=label.upper(), text_color=MUTED,
@@ -172,8 +207,8 @@ class App:
     def _load_git_stats(self) -> None:
         git = get_git_info(self.base_path)
         self._stat_branch._val_label.configure(text=git.get('branch', '—'))
-        msg      = git.get('commit_msg', '')
-        short    = (msg[:26] + '…') if len(msg) > 26 else msg
+        msg   = git.get('commit_msg', '')
+        short = (msg[:26] + '…') if len(msg) > 26 else msg
         self._stat_commit._val_label.configure(
             text=f"{git.get('commit_hash', '—')}  {short}".strip())
 
