@@ -1,6 +1,8 @@
 import os
+import subprocess
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
+from datetime import datetime
 
 # Filtros
 EXCLUIR_CARPETAS = {
@@ -175,6 +177,71 @@ class App:
             pass
         return salida
 
+    def obtener_git_info(self, path: str) -> dict:
+        """Intenta leer branch y último commit del repo en `path`. Retorna dict con los campos disponibles."""
+        info = {}
+        try:
+            branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                cwd=path, capture_output=True, text=True, timeout=5
+            )
+            if branch.returncode == 0:
+                info['branch'] = branch.stdout.strip()
+
+            log = subprocess.run(
+                ['git', 'log', '-1', '--format=%H|%s|%ad', '--date=format:%Y-%m-%d %H:%M'],
+                cwd=path, capture_output=True, text=True, timeout=5
+            )
+            if log.returncode == 0 and log.stdout.strip():
+                parts = log.stdout.strip().split('|', 2)
+                info['commit_hash'] = parts[0][:7] if len(parts) > 0 else ''
+                info['commit_msg']  = parts[1]         if len(parts) > 1 else ''
+                info['commit_date'] = parts[2]         if len(parts) > 2 else ''
+        except Exception:
+            pass
+        return info
+
+    def generar_summary(self, paths: list) -> str:
+        """Genera el bloque de summary en markdown."""
+        # Contar solo archivos (no carpetas)
+        archivos = [p for p in paths if os.path.isfile(p)]
+        n_archivos = len(archivos)
+
+        # Estimar tokens: leer contenido y dividir por 4
+        total_chars = 0
+        for p in archivos:
+            try:
+                with open(p, 'r', encoding='utf-8') as f:
+                    total_chars += len(f.read())
+            except Exception:
+                pass
+        tokens_estimados = total_chars // 4
+
+        # Info git
+        git = self.obtener_git_info(self.ruta_base)
+
+        proyecto = os.path.basename(self.ruta_base)
+        fecha    = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+        lineas = [
+            "## Summary\n",
+            f"| Campo            | Valor |",
+            f"|------------------|-------|",
+            f"| **Project**      | `{proyecto}` |",
+            f"| **Exported**     | {fecha} |",
+            f"| **Files**        | {n_archivos} |",
+            f"| **Est. tokens**  | ~{tokens_estimados:,} |",
+        ]
+
+        if git.get('branch'):
+            lineas.append(f"| **Branch**       | `{git['branch']}` |")
+        if git.get('commit_hash'):
+            lineas.append(f"| **Last commit**  | `{git['commit_hash']}` — {git['commit_msg']} |")
+        if git.get('commit_date'):
+            lineas.append(f"| **Commit date**  | {git['commit_date']} |")
+
+        return '\n'.join(lineas) + '\n'
+
     def _asegurar_md(self, nombre: str) -> str:
         """Devuelve el nombre con extensión .md si no tiene extensión."""
         nombre = nombre.strip()
@@ -207,6 +274,10 @@ class App:
         salida = os.path.join(carpeta_contexts, nombre)
 
         with open(salida, 'w', encoding='utf-8') as f:
+            # --- Summary ---
+            f.write(self.generar_summary(paths))
+            f.write("\n")
+
             # --- Estructura de directorios ---
             f.write("## Directory Structure\n\n")
             f.write("```\n")
