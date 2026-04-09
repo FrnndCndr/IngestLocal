@@ -1,6 +1,7 @@
 import os
 import threading
 import tkinter as tk
+from datetime import datetime
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
@@ -8,7 +9,7 @@ import customtkinter as ctk
 from app.tree import FileTree
 from app.exporter import Exporter
 from app.git_info import get_git_info
-from config import DEFAULT_EXPORT_NAME
+from config import DEFAULT_EXPORT_NAME, EXTENSION_LANG
 
 # ── Theme ──────────────────────────────────────────────────────────────────────
 ctk.set_appearance_mode('dark')
@@ -23,24 +24,21 @@ TEXT   = '#F2F2F7'
 MUTED  = '#8E8E93'
 GREEN  = '#30D158'
 AMBER  = '#FFD60A'
-RED    = '#FF453A'
 
 SIDEBAR_MIN     = 160
 SIDEBAR_MAX     = 500
 SIDEBAR_DEFAULT = 220
-
-# Max chars rendered in preview (keeps it snappy for huge selections)
 PREVIEW_CHAR_LIMIT = 80_000
 
 
 class App:
     def __init__(self, root: ctk.CTk):
-        self.root        = root
-        self.base_path   = ''
+        self.root      = root
+        self.base_path = ''
         self.file_tree: FileTree | None = None
-        self._drag_x     = 0
-        self._drag_w     = 0
-        self._preview_job: str | None = None   # after() handle for debounce
+        self._drag_x   = 0
+        self._drag_w   = 0
+        self._preview_job: str | None = None
         self._build_ui()
 
     # ── Layout ─────────────────────────────────────────────────────────────────
@@ -137,15 +135,15 @@ class App:
         inner = ctk.CTkFrame(stats_bar, fg_color='transparent')
         inner.pack(fill='both', expand=True, padx=16, pady=6)
 
-        self._stat_branch = self._stat_block(inner, 'Branch',      '—',       BLUE)
-        self._stat_commit = self._stat_block(inner, 'Last commit',  '—',       TEXT)
-        self._stat_files  = self._stat_block(inner, 'Selected',     '0 files', GREEN)
-        self._stat_tokens = self._stat_block(inner, 'Est. tokens',  '—',       AMBER)
+        self._stat_branch = self._stat_block(inner, 'Branch',     '—',       BLUE)
+        self._stat_commit = self._stat_block(inner, 'Last commit', '—',       TEXT)
+        self._stat_files  = self._stat_block(inner, 'Selected',    '0 files', GREEN)
+        self._stat_tokens = self._stat_block(inner, 'Est. tokens', '—',       AMBER)
         for w in (self._stat_branch, self._stat_commit, self._stat_files, self._stat_tokens):
             w.pack(side='left', padx=(0, 24))
 
-        # Preview area
-        self._build_preview(main)
+        # Three-panel preview
+        self._build_preview_area(main)
 
         # Footer
         footer = ctk.CTkFrame(main, fg_color=SIDE, corner_radius=0,
@@ -173,135 +171,193 @@ class App:
 
         return main
 
-    # ── Preview ────────────────────────────────────────────────────────────────
+    # ── Three-panel preview ────────────────────────────────────────────────────
 
-    def _build_preview(self, parent) -> None:
-        container = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
-        container.grid(row=1, column=0, sticky='nsew')
-        container.rowconfigure(0, weight=1)
-        container.columnconfigure(0, weight=1)
+    def _build_preview_area(self, parent) -> None:
+        area = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+        area.grid(row=1, column=0, sticky='nsew')
+        area.rowconfigure(1, weight=1)
+        area.columnconfigure(0, weight=1)
+        area.columnconfigure(1, weight=1)
 
-        # Native tk.Text — much faster than CTkTextbox for large content
-        self._preview = tk.Text(
-            container,
-            bg=BG, fg=MUTED,
+        # Top row: Summary (left) + Directory Structure (right)
+        self._pane_summary   = self._build_text_pane(area, 'Summary',             row=0, col=0)
+        self._pane_structure = self._build_text_pane(area, 'Directory Structure',  row=0, col=1)
+
+        # Bottom row: File content (spans both columns)
+        self._pane_content   = self._build_text_pane(area, 'Files Content',        row=1, col=0, colspan=2)
+
+        # Uniform top-row height (~30% of available space via fixed pixel height isn't possible
+        # without a sash, so we use a PanedWindow for the vertical split)
+        # Simpler: give top row a fixed height via rowconfigure minsize
+        area.rowconfigure(0, minsize=180, weight=0)
+
+    def _build_text_pane(
+        self, parent, title: str, row: int, col: int, colspan: int = 1
+    ) -> tk.Text:
+        wrapper = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=8,
+                               border_width=1, border_color=BORDER)
+        wrapper.grid(row=row, column=col, columnspan=colspan,
+                     sticky='nsew', padx=6, pady=6)
+        wrapper.rowconfigure(1, weight=1)
+        wrapper.columnconfigure(0, weight=1)
+
+        # Pane title
+        ctk.CTkLabel(
+            wrapper, text=title.upper(),
+            text_color=MUTED, font=ctk.CTkFont(size=10),
+            anchor='w',
+        ).grid(row=0, column=0, columnspan=2, sticky='ew', padx=10, pady=(8, 2))
+
+        # Text widget
+        txt = tk.Text(
+            wrapper,
+            bg=CARD, fg=MUTED,
             insertbackground=BLUE,
             selectbackground=BORDER,
-            font=('Cascadia Code', 11) if self._font_exists('Cascadia Code')
-                 else ('Consolas', 11),
+            font=('Consolas', 10),
             relief='flat', bd=0,
-            padx=16, pady=12,
+            padx=10, pady=6,
             wrap='none',
             state='disabled',
             cursor='arrow',
         )
-        self._preview.grid(row=0, column=0, sticky='nsew')
+        txt.grid(row=1, column=0, sticky='nsew')
 
         # Scrollbars
-        vsb = ctk.CTkScrollbar(container, command=self._preview.yview,
+        vsb = ctk.CTkScrollbar(wrapper, command=txt.yview,
                                button_color=BORDER, button_hover_color=MUTED)
-        vsb.grid(row=0, column=1, sticky='ns')
-        hsb = ctk.CTkScrollbar(container, command=self._preview.xview,
-                               button_color=BORDER, button_hover_color=MUTED,
-                               orientation='horizontal')
-        hsb.grid(row=1, column=0, sticky='ew')
-        self._preview.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.grid(row=1, column=1, sticky='ns')
 
-        # Text tags for highlighting
-        self._preview.tag_configure('heading',  foreground=TEXT,  font=('Consolas', 11, 'bold'))
-        self._preview.tag_configure('h3',       foreground=MUTED, font=('Consolas', 10, 'italic'))
-        self._preview.tag_configure('fence',    foreground=BORDER)
-        self._preview.tag_configure('code',     foreground='#A8FF78', font=('Consolas', 11))
-        self._preview.tag_configure('filepath', foreground=BLUE,  font=('Consolas', 11, 'bold'))
-        self._preview.tag_configure('muted',    foreground=MUTED)
-        self._preview.tag_configure('truncated',foreground=AMBER)
-        self._preview.tag_configure('empty',    foreground=MUTED, font=('Consolas', 13))
+        if colspan > 1 or row > 0:   # horizontal scroll only for wide/tall panes
+            hsb = ctk.CTkScrollbar(wrapper, command=txt.xview,
+                                   button_color=BORDER, button_hover_color=MUTED,
+                                   orientation='horizontal')
+            hsb.grid(row=2, column=0, sticky='ew')
+            txt.configure(xscrollcommand=hsb.set)
 
-        self._set_preview_placeholder()
+        txt.configure(yscrollcommand=vsb.set)
 
-    @staticmethod
-    def _font_exists(name: str) -> bool:
-        try:
-            import tkinter.font as tkfont
-            return name in tkfont.families()
-        except Exception:
-            return False
+        # Tags
+        txt.tag_configure('key',      foreground=MUTED,  font=('Consolas', 10))
+        txt.tag_configure('value',    foreground=TEXT,    font=('Consolas', 10))
+        txt.tag_configure('blue',     foreground=BLUE,    font=('Consolas', 10, 'bold'))
+        txt.tag_configure('green',    foreground=GREEN,   font=('Consolas', 10, 'bold'))
+        txt.tag_configure('amber',    foreground=AMBER,   font=('Consolas', 10, 'bold'))
+        txt.tag_configure('heading',  foreground=TEXT,    font=('Consolas', 10, 'bold'))
+        txt.tag_configure('filepath', foreground=BLUE,    font=('Consolas', 10, 'bold'))
+        txt.tag_configure('fence',    foreground=BORDER,  font=('Consolas', 10))
+        txt.tag_configure('code',     foreground='#A8FF78', font=('Consolas', 10))
+        txt.tag_configure('truncated',foreground=AMBER)
+        txt.tag_configure('placeholder', foreground=BORDER, font=('Consolas', 10, 'italic'))
 
-    def _set_preview_placeholder(self) -> None:
-        self._preview_write('Select files to preview the output\n', 'empty')
+        return txt
 
-    def _preview_write(self, text: str, *tags) -> None:
-        self._preview.configure(state='normal')
-        self._preview.delete('1.0', 'end')
-        self._preview.insert('end', text, tags)
-        self._preview.configure(state='disabled')
+    # ── Pane writers ───────────────────────────────────────────────────────────
+
+    def _write_pane(self, pane: tk.Text, chunks: list[tuple[str, str]]) -> None:
+        pane.configure(state='normal')
+        pane.delete('1.0', 'end')
+        for text, tag in chunks:
+            pane.insert('end', text, tag)
+        pane.configure(state='disabled')
+        pane.yview_moveto(0)
+
+    def _placeholder(self, pane: tk.Text, text: str) -> None:
+        self._write_pane(pane, [(text, 'placeholder')])
+
+    # ── Preview build (threaded) ────────────────────────────────────────────────
 
     def _update_preview(self, paths: list[str]) -> None:
-        """Build preview content in a thread, then update the widget on the main thread."""
         def build():
-            files  = [p for p in paths if os.path.isfile(p)]
-            chunks: list[tuple[str, str]] = []   # (text, tag)
+            files = [p for p in paths if os.path.isfile(p)]
 
-            if not files:
-                chunks.append(('No files selected\n', 'empty'))
-                self.root.after(0, lambda c=chunks: self._render_preview(c))
-                return
+            summary_chunks   = self._build_summary_chunks(files)
+            structure_chunks = self._build_structure_chunks()
+            content_chunks   = self._build_content_chunks(files)
 
-            # Summary block
-            chunks.append(('## Summary\n', 'heading'))
-            chunks.append((f'   {len(files)} files selected\n\n', 'muted'))
-
-            # Directory structure header
-            chunks.append(('## Directory Structure\n\n', 'heading'))
-            chunks.append(('```\n', 'fence'))
-            struct = self._build_structure_preview()
-            chunks.append((struct, 'muted'))
-            chunks.append(('```\n\n', 'fence'))
-
-            # Files content
-            chunks.append(('## Files Content\n\n', 'heading'))
-
-            total_chars = 0
-            for path in files:
-                if total_chars >= PREVIEW_CHAR_LIMIT:
-                    remaining = len(files) - files.index(path)
-                    chunks.append((
-                        f'\n... {remaining} more file(s) not shown in preview '
-                        f'(limit {PREVIEW_CHAR_LIMIT:,} chars)\n', 'truncated'
-                    ))
-                    break
-
-                rel = os.path.relpath(path, self.base_path)
-                chunks.append((f'### `{rel}`\n', 'filepath'))
-
-                try:
-                    content = open(path, encoding='utf-8', errors='ignore').read()
-                    total_chars += len(content)
-                    ext  = os.path.splitext(path)[1].lower()
-                    lang = _EXT_LANG.get(ext, '')
-                    chunks.append((f'```{lang}\n', 'fence'))
-                    chunks.append((content if content.endswith('\n') else content + '\n', 'code'))
-                    chunks.append(('```\n\n', 'fence'))
-                except Exception:
-                    chunks.append(('> ⚠️  Could not read file.\n\n', 'muted'))
-
-            self.root.after(0, lambda c=chunks: self._render_preview(c))
+            self.root.after(0, lambda: (
+                self._write_pane(self._pane_summary,   summary_chunks),
+                self._write_pane(self._pane_structure, structure_chunks),
+                self._write_pane(self._pane_content,   content_chunks),
+            ))
 
         threading.Thread(target=build, daemon=True).start()
 
-    def _build_structure_preview(self) -> str:
-        """Quick directory structure string (reuses exporter logic)."""
-        from app.exporter import Exporter
-        exp = Exporter(self.base_path)
-        return exp._walk_directory(self.base_path)
+    def _build_summary_chunks(self, files: list[str]) -> list[tuple[str, str]]:
+        if not files:
+            return [('No files selected\n', 'placeholder')]
 
-    def _render_preview(self, chunks: list[tuple[str, str]]) -> None:
-        self._preview.configure(state='normal')
-        self._preview.delete('1.0', 'end')
-        for text, tag in chunks:
-            self._preview.insert('end', text, tag)
-        self._preview.configure(state='disabled')
-        self._preview.yview_moveto(0)
+        total_chars = sum(
+            len(open(p, encoding='utf-8', errors='ignore').read()) for p in files
+        )
+        tokens = total_chars // 4
+        git    = get_git_info(self.base_path)
+        now    = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+        rows = [
+            ('Project',     os.path.basename(self.base_path), 'value'),
+            ('Exported',    now,                               'value'),
+            ('Files',       str(len(files)),                   'green'),
+            ('Est. tokens', f'~{tokens:,}',                   'amber'),
+        ]
+        if git.get('branch'):
+            rows.append(('Branch', git['branch'], 'blue'))
+        if git.get('commit_hash'):
+            msg   = git.get('commit_msg', '')
+            short = (msg[:30] + '…') if len(msg) > 30 else msg
+            rows.append(('Last commit', f"{git['commit_hash']}  {short}".strip(), 'value'))
+
+        chunks: list[tuple[str, str]] = []
+        col = max(len(r[0]) for r in rows) + 2
+        for label, val, tag in rows:
+            chunks.append((f'{label:<{col}}', 'key'))
+            chunks.append((val + '\n', tag))
+        return chunks
+
+    def _build_structure_chunks(self) -> list[tuple[str, str]]:
+        if not self.base_path:
+            return [('No folder selected\n', 'placeholder')]
+        exp  = Exporter(self.base_path)
+        text = exp._walk_directory(self.base_path)
+        return [(text or '(empty)\n', 'value')]
+
+    def _build_content_chunks(self, files: list[str]) -> list[tuple[str, str]]:
+        if not files:
+            return [('No files selected\n', 'placeholder')]
+
+        chunks: list[tuple[str, str]] = []
+        total_chars = 0
+
+        for path in files:
+            if total_chars >= PREVIEW_CHAR_LIMIT:
+                remaining = len(files) - files.index(path)
+                chunks.append((
+                    f'\n... {remaining} more file(s) not shown '
+                    f'(preview limit {PREVIEW_CHAR_LIMIT:,} chars)\n',
+                    'truncated',
+                ))
+                break
+
+            rel  = os.path.relpath(path, self.base_path)
+            ext  = os.path.splitext(path)[1].lower()
+            lang = EXTENSION_LANG.get(ext, '')
+
+            chunks.append((f'### `{rel}`\n', 'filepath'))
+            chunks.append((f'```{lang}\n',   'fence'))
+
+            try:
+                content = open(path, encoding='utf-8', errors='ignore').read()
+                total_chars += len(content)
+                if not content.endswith('\n'):
+                    content += '\n'
+                chunks.append((content, 'code'))
+            except Exception:
+                chunks.append(('> ⚠️  Could not read file.\n', 'key'))
+
+            chunks.append(('```\n\n', 'fence'))
+
+        return chunks
 
     # ── Stat helpers ───────────────────────────────────────────────────────────
 
@@ -315,11 +371,10 @@ class App:
         frame._val_label = val
         return frame
 
-    # ── Selection change (debounced) ───────────────────────────────────────────
+    # ── Selection change ───────────────────────────────────────────────────────
 
     def _on_selection_change(self) -> None:
         self._refresh_stats()
-        # Debounce: wait 300ms after last change before rebuilding preview
         if self._preview_job:
             self.root.after_cancel(self._preview_job)
         self._preview_job = self.root.after(300, self._trigger_preview)
@@ -377,14 +432,3 @@ class App:
         exporter    = Exporter(self.base_path)
         output_path = exporter.export(paths, filename)
         messagebox.showinfo('Export complete', f'Saved to:\n{output_path}')
-
-
-# ── Extension → markdown lang map (local copy for preview) ────────────────────
-_EXT_LANG = {
-    '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
-    '.tsx': 'tsx', '.jsx': 'jsx', '.cs': 'csharp', '.html': 'html',
-    '.css': 'css', '.scss': 'scss', '.json': 'json', '.yaml': 'yaml',
-    '.yml': 'yaml', '.md': 'markdown', '.sql': 'sql', '.sh': 'bash',
-    '.xml': 'xml', '.toml': 'toml', '.vue': 'vue', '.rs': 'rust',
-    '.go': 'go', '.kt': 'kotlin', '.swift': 'swift',
-}
