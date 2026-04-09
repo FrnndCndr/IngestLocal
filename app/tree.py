@@ -6,14 +6,11 @@ import customtkinter as ctk
 
 from config import EXCLUDE_FOLDERS, EXCLUDE_FILES, EXCLUDE_EXTENSIONS
 
-# ── Palette (keep in sync with ui.py) ─────────────────────────────────────────
 BG     = '#111113'
 SIDE   = '#1C1C1E'
-CARD   = '#2C2C2E'
 BORDER = '#3A3A3C'
 TEXT   = '#F2F2F7'
 MUTED  = '#8E8E93'
-BLUE   = '#0A84FF'
 SEL_BG = '#1E3A5F'
 
 CHECKED   = '☑'
@@ -21,52 +18,36 @@ UNCHECKED = '☐'
 
 
 def apply_treeview_style() -> None:
-    """Dark style for ttk.Treeview that matches the CTk theme."""
     style = ttk.Style()
     style.theme_use('default')
-
     style.configure('Dark.Treeview',
-        background=SIDE,
-        foreground=MUTED,
-        fieldbackground=SIDE,
-        borderwidth=0,
-        rowheight=26,
-        font=('Segoe UI', 11),
+        background=SIDE, foreground=MUTED, fieldbackground=SIDE,
+        borderwidth=0, rowheight=26, font=('Segoe UI', 11),
     )
     style.configure('Dark.Treeview.Heading',
-        background=SIDE,
-        foreground=MUTED,
-        borderwidth=0,
+        background=SIDE, foreground=MUTED, borderwidth=0,
     )
     style.map('Dark.Treeview',
         background=[('selected', SEL_BG)],
         foreground=[('selected', TEXT)],
     )
-    style.configure('Dark.Treeview',
-        indent=16,
-    )
+    style.configure('Dark.Treeview', indent=16)
 
 
 class FileTree:
-    """
-    Wraps ttk.Treeview with checkbox logic and dark styling.
-    Folders are collapsed by default; toggling propagates to children
-    and bubbles up to parents.
-    """
+    """ttk.Treeview with checkbox logic and dark styling."""
 
     def __init__(self, parent: ctk.CTkFrame, on_change: Callable):
         self.on_change = on_change
-        self._checks: dict[str, bool] = {}   # iid -> bool
-        self._paths:  dict[str, str]  = {}   # iid -> absolute path
+        self._checks: dict[str, bool] = {}
+        self._paths:  dict[str, str]  = {}
 
         apply_treeview_style()
 
-        # Scrollbar packed first so it claims its space before the Treeview
         sb = ctk.CTkScrollbar(parent, button_color=BORDER, button_hover_color=MUTED)
         sb.pack(side='right', fill='y')
 
-        self._tv = ttk.Treeview(parent, show='tree', style='Dark.Treeview',
-                                selectmode='none')
+        self._tv = ttk.Treeview(parent, show='tree', style='Dark.Treeview', selectmode='none')
         self._tv.pack(side='left', fill='both', expand=True)
         self._tv.bind('<Button-1>', self._on_click)
         self._tv.configure(yscrollcommand=sb.set)
@@ -88,29 +69,20 @@ class FileTree:
 
         for name in entries:
             full = os.path.join(path, name)
-
             if name in EXCLUDE_FOLDERS:
                 continue
-
             if os.path.isdir(full):
-                iid = self._tv.insert(
-                    parent_iid, 'end',
-                    text=f'{UNCHECKED}  📁  {name}/',
-                    open=False,          # collapsed by default
-                )
+                iid = self._tv.insert(parent_iid, 'end',
+                                      text=f'{UNCHECKED}  {name}/', open=False)
                 self._checks[iid] = False
                 self._paths[iid]  = full
                 self._load_recursive(full, iid)
-
             else:
                 if name in EXCLUDE_FILES:
                     continue
                 if os.path.splitext(name)[1].lower() in EXCLUDE_EXTENSIONS:
                     continue
-                iid = self._tv.insert(
-                    parent_iid, 'end',
-                    text=f'{UNCHECKED}  {_file_icon(name)}  {name}',
-                )
+                iid = self._tv.insert(parent_iid, 'end', text=f'{UNCHECKED}  {name}')
                 self._checks[iid] = False
                 self._paths[iid]  = full
 
@@ -130,7 +102,6 @@ class FileTree:
         self._checks[iid] = state
         text = self._tv.item(iid, 'text')
         mark = CHECKED if state else UNCHECKED
-        # Replace only the first char (the checkbox symbol)
         self._tv.item(iid, text=mark + text[1:])
 
     def _propagate_down(self, iid: str, state: bool) -> None:
@@ -142,8 +113,8 @@ class FileTree:
         parent = self._tv.parent(iid)
         if not parent:
             return
-        children_states = [self._checks[c] for c in self._tv.get_children(parent)]
-        self._set(parent, any(children_states))
+        states = [self._checks[c] for c in self._tv.get_children(parent)]
+        self._set(parent, any(states))
         self._propagate_up(parent)
 
     # ── Bulk ───────────────────────────────────────────────────────────────────
@@ -156,20 +127,4 @@ class FileTree:
     # ── Path collection ────────────────────────────────────────────────────────
 
     def get_selected_paths(self, base_path: str) -> list[str]:
-        return [
-            path for iid, path in self._paths.items()
-            if self._checks.get(iid, False)
-        ]
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _file_icon(name: str) -> str:
-    ext = os.path.splitext(name)[1].lower()
-    return {
-        '.py': '🐍', '.js': '🟨', '.ts': '🔷', '.tsx': '🔷', '.jsx': '🟨',
-        '.cs': '🟣', '.json': '🗂', '.md': '📝', '.yml': '⚙', '.yaml': '⚙',
-        '.sql': '🗃', '.sh': '⌨', '.html': '🌐', '.css': '🎨', '.scss': '🎨',
-        '.dockerfile': '🐳', '.toml': '⚙', '.xml': '📋', '.vue': '💚',
-        '.rs': '🦀', '.go': '🐹', '.kt': '🟠', '.swift': '🍊',
-    }.get(ext, '📄')
+        return [p for iid, p in self._paths.items() if self._checks.get(iid, False)]
